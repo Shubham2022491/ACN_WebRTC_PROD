@@ -25,7 +25,7 @@ function App() {
     console.log("Initializing socket and WebRTC connections");
     
     // Initialize socket connection
-    socketRef.current = io("http://localhost:4000");
+    socketRef.current = io("https://acn-webrtc-signaling-server-prod.onrender.com/");
     
     const createPeerConnection = (userSocketId) => {
       // Check if connection already exists
