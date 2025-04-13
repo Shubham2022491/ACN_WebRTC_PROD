@@ -175,8 +175,11 @@ function App() {
     console.log("Initializing socket and WebRTC connections");
     
     // Initialize socket connection
-    socketRef.current = io("https://acn-webrtc-signaling-server-prod.onrender.com/");
-    
+    socketRef.current = io("wss://acn-webrtc-signaling-server-prod.onrender.com", {
+        transports: ['websocket'],
+        reconnectionAttempts: 5,
+        timeout: 5000,
+    });
     const createPeerConnection = (userSocketId) => {
       // Check if connection already exists
       if (peerConnectionsRef.current[userSocketId]) {
