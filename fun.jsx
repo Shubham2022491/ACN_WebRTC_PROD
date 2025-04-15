@@ -566,7 +566,7 @@ function App() {
 
     // Add new socket event listeners for media state changes
     socketRef.current.on("media_state_change", ({ sender, audio, video }) => {
-      alert("Got media from: "+sender);
+     // alert("Got media from: "+sender);
       setUserMediaState(prev => ({
         ...prev,
         [sender]: { audio, video }
