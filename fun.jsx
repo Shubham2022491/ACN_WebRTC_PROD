@@ -49,109 +49,7 @@ const Icons = {
 };
 
 // Add styles directly in the component
-const styles = {
-  container: {
-    minHeight: '100vh',
-    height: '100vh',
-    width: '100vw',
-    backgroundColor: '#202124',
-    color: 'white',
-    display: 'flex',
-    flexDirection: 'column',
-    overflow: 'hidden',
-    margin: 0,
-    padding: 0,
-    position: 'fixed',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-  },
-  header: {
-    position: 'fixed',
-    top: '16px',
-    left: '16px',
-    zIndex: 10,
-    background: 'linear-gradient(to bottom, rgba(0,0,0,0.4) 0%, transparent 100%)',
-    padding: '16px',
-    borderRadius: '8px',
-  },
-  title: {
-    fontSize: '1.5rem',
-    fontWeight: 'bold',
-    marginBottom: '0.5rem',
-    color: 'rgba(255, 255, 255, 0.95)',
-  },
-  participantCount: {
-    fontSize: '0.875rem',
-    color: 'rgba(255, 255, 255, 0.7)',
-  },
-  gridContainer: {
-    display: 'grid',
-    gap: '4px',
-    padding: '4px',
-    width: '100%',
-    height: '100vh',
-    boxSizing: 'border-box',
-    alignContent: 'center',
-    justifyContent: 'center',
-    gridAutoRows: '1fr',
-    position: 'relative',
-  },
-  videoContainer: {
-    position: 'relative',
-    backgroundColor: '#3c4043',
-    borderRadius: '12px',
-    overflow: 'hidden',
-    width: '100%',
-    height: '100%',
-    border: '2px solid transparent',
-  },
-  video: {
-    width: '100%',
-    height: '100%',
-    objectFit: 'cover',
-    backgroundColor: '#202124',
-  },
-  controlsContainer: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    display: 'flex',
-    justifyContent: 'center',
-    gap: '8px',
-    padding: '12px',
-    background: 'linear-gradient(to top, rgba(0,0,0,0.7) 0%, transparent 100%)',
-  },
-  controlButton: {
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    border: 'none',
-    borderRadius: '50%',
-    width: '40px',
-    height: '40px',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    cursor: 'pointer',
-    color: 'white',
-    transition: 'all 0.2s ease',
-  },
-  controlButtonOff: {
-    backgroundColor: '#ea4335',
-  },
-  nameTag: {
-    position: 'absolute',
-    bottom: '70px', // Updated to make room for controls
-    left: '12px',
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
-    color: 'white',
-    padding: '4px 8px',
-    borderRadius: '4px',
-    fontSize: '0.875rem',
-    fontWeight: '500',
-  }
-};
+
 
 function App() {
   const localVideoRef = useRef(null);
@@ -162,7 +60,251 @@ function App() {
   const socketRef = useRef(null);
   const socketInitializedRef = useRef(false);
   const [userColors, setUserColors] = useState({});
-  const [userMediaState, setUserMediaState] = useState({});
+  const [userMediaState, setUserMediaState] = useState({
+    [socketRef.current?.id]: { audio: true, video: true }
+  });
+  const [isChatOpen, setIsChatOpen] = useState(false);
+  const [messages, setMessages] = useState([]);
+  const [newMessage, setNewMessage] = useState('');
+  const chatContainerRef = useRef(null);
+  const [unreadMessages, setUnreadMessages] = useState(0);
+  const iceCandidateQueueRef = useRef({});
+
+  const styles = {
+    container: {
+      minHeight: '100vh',
+      height: '100vh',
+      width: '100vw',
+      backgroundColor: '#202124',
+      color: 'white',
+      display: 'flex',
+      flexDirection: 'column',
+      overflow: 'hidden',
+      margin: 0,
+      padding: 0,
+      position: 'fixed',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+    },
+    header: {
+      position: 'fixed',
+      top: '16px',
+      left: '16px',
+      zIndex: 10,
+      background: 'linear-gradient(to bottom, rgba(0,0,0,0.4) 0%, transparent 100%)',
+      padding: '16px',
+      borderRadius: '8px',
+    },
+    title: {
+      fontSize: '1.5rem',
+      fontWeight: 'bold',
+      marginBottom: '0.5rem',
+      color: 'rgba(255, 255, 255, 0.95)',
+    },
+    participantCount: {
+      fontSize: '0.875rem',
+      color: 'rgba(255, 255, 255, 0.7)',
+    },
+    gridContainer: {
+      display: 'grid',
+      gap: '4px',
+      padding: '4px',
+      width: '100%',
+      height: '100vh',
+      boxSizing: 'border-box',
+      alignContent: 'center',
+      justifyContent: 'center',
+      gridAutoRows: '1fr',
+      position: 'relative',
+    },
+    videoContainer: {
+      position: 'relative',
+      backgroundColor: '#3c4043',
+      borderRadius: '12px',
+      overflow: 'hidden',
+      width: '100%',
+      height: '100%',
+      border: '2px solid transparent',
+    },
+    video: {
+      width: '100%',
+      height: '100%',
+      objectFit: 'cover',
+      backgroundColor: '#202124',
+    },
+    controlsBar: {
+      position: 'fixed',
+      bottom: '20px',
+      left: '50%',
+      transform: 'translateX(-50%)',
+      display: 'flex',
+      gap: '16px',
+      backgroundColor: 'rgba(32, 33, 36, 0.8)',
+      padding: '12px 24px',
+      borderRadius: '40px',
+      zIndex: 1000,
+    },
+    controlButton: {
+      backgroundColor: 'rgba(255, 255, 255, 0.1)',
+      border: 'none',
+      borderRadius: '50%',
+      width: '48px',
+      height: '48px',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      cursor: 'pointer',
+      color: 'white',
+      transition: 'all 0.2s ease',
+    },
+    controlButtonOff: {
+      backgroundColor: '#ea4335',
+    },
+    nameTag: {
+      position: 'absolute',
+      bottom: '70px', // Updated to make room for controls
+      left: '12px',
+      backgroundColor: 'rgba(0, 0, 0, 0.6)',
+      color: 'white',
+      padding: '4px 8px',
+      borderRadius: '4px',
+      fontSize: '0.875rem',
+      fontWeight: '500',
+    },
+    chatButtonContainer: {
+      position: 'fixed',
+      bottom: '20px',
+      right: '20px',
+      zIndex: 1000,
+      opacity: isChatOpen ? 0 : 1,
+      visibility: isChatOpen ? 'hidden' : 'visible',
+      transition: 'opacity 0.3s ease, visibility 0.3s ease',
+    },
+    chatButton: {
+      backgroundColor: '#3c4043',
+      color: 'white',
+      border: 'none',
+      borderRadius: '50%',
+      width: '48px',
+      height: '48px',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      cursor: 'pointer',
+      boxShadow: '0 2px 5px rgba(0,0,0,0.2)',
+    },
+    notificationBadge: {
+      position: 'absolute',
+      top: '-8px',
+      right: '-8px',
+      backgroundColor: '#ea4335',
+      color: 'white',
+      borderRadius: '50%',
+      minWidth: '20px',
+      height: '20px',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      fontSize: '12px',
+      fontWeight: 'bold',
+      padding: '0 4px',
+      animation: 'pulse 2s infinite',
+    },
+    '@keyframes pulse': {
+      '0%': {
+        transform: 'scale(1)',
+      },
+      '50%': {
+        transform: 'scale(1.1)',
+      },
+      '100%': {
+        transform: 'scale(1)',
+      },
+    },
+    chatContainer: {
+      position: 'fixed',
+      right: isChatOpen ? '0' : '-400px',
+      top: '0',
+      width: '400px',
+      height: '100vh',
+      backgroundColor: '#202124',
+      transition: 'right 0.3s ease',
+      display: 'flex',
+      flexDirection: 'column',
+      zIndex: 999,
+    },
+    chatHeader: {
+      padding: '16px',
+      borderBottom: '1px solid #3c4043',
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+    },
+    chatTitle: {
+      color: 'white',
+      fontSize: '1.2rem',
+      fontWeight: 'bold',
+    },
+    closeButton: {
+      backgroundColor: 'transparent',
+      border: 'none',
+      color: 'white',
+      cursor: 'pointer',
+      fontSize: '1.5rem',
+    },
+    messagesContainer: {
+      flex: 1,
+      overflowY: 'auto',
+      padding: '16px',
+    },
+    message: {
+      marginBottom: '12px',
+      padding: '8px 12px',
+      borderRadius: '8px',
+      maxWidth: '80%',
+      wordBreak: 'break-word',
+    },
+    ownMessage: {
+      backgroundColor: '#3c4043',
+      color: 'white',
+      marginLeft: 'auto',
+    },
+    otherMessage: {
+      backgroundColor: '#5f6368',
+      color: 'white',
+    },
+    messageSender: {
+      fontSize: '0.8rem',
+      color: '#9aa0a6',
+      marginBottom: '4px',
+    },
+    messageInputContainer: {
+      padding: '16px',
+      borderTop: '1px solid #3c4043',
+      display: 'flex',
+      gap: '8px',
+    },
+    messageInput: {
+      flex: 1,
+      backgroundColor: '#3c4043',
+      border: 'none',
+      borderRadius: '20px',
+      padding: '12px 16px',
+      color: 'white',
+      outline: 'none',
+    },
+    sendButton: {
+      backgroundColor: '#8ab4f8',
+      color: 'black',
+      border: 'none',
+      borderRadius: '20px',
+      padding: '12px 16px',
+      cursor: 'pointer',
+      fontWeight: 'bold',
+    },
+  };
 
   useEffect(() => {
     // Prevent duplicate initializations
@@ -180,6 +322,7 @@ function App() {
         reconnectionAttempts: 5,
         timeout: 5000,
     });
+    
     const createPeerConnection = (userSocketId) => {
       // Check if connection already exists
       if (peerConnectionsRef.current[userSocketId]) {
@@ -201,22 +344,49 @@ function App() {
       };
 
       // Connection state changes
-      pc.oniceconnectionstatechange = () => {
-        console.log(`Connection state with ${userSocketId}: ${pc.iceConnectionState}`);
-        if (pc.iceConnectionState === "disconnected" || 
-            pc.iceConnectionState === "closed" || 
-            pc.iceConnectionState === "failed") {
+      pc.onconnectionstatechange = () => {
+        console.log(`Connection state with ${userSocketId}: ${pc.connectionState}`);
+        if (pc.connectionState === "disconnected" || 
+            pc.connectionState === "closed" || 
+            pc.connectionState === "failed") {
           cleanupPeerConnection(userSocketId);
         }
       };
 
       // Handle incoming tracks (remote video)
       pc.ontrack = (ev) => {
-        console.log(`Received track from ${userSocketId}`);
-        setRemoteStreams(prev => ({
-          ...prev,
-          [userSocketId]: ev.streams[0]
-        }));
+        console.log(`Received track from ${userSocketId}:`, ev.track.kind);
+        if (ev.streams && ev.streams[0]) {
+          const stream = ev.streams[0];
+          // Ensure video track is enabled
+          const videoTrack = stream.getVideoTracks()[0];
+          if (videoTrack) {
+            videoTrack.enabled = true;
+          }
+          // Ensure audio track is enabled
+          const audioTrack = stream.getAudioTracks()[0];
+          if (audioTrack) {
+            audioTrack.enabled = true;
+          }
+          
+          setRemoteStreams(prev => {
+            const newStreams = { ...prev };
+            newStreams[userSocketId] = stream;
+            return newStreams;
+          });
+
+          // Process any queued ICE candidates
+          const queuedCandidates = iceCandidateQueueRef.current[userSocketId] || [];
+          queuedCandidates.forEach(candidate => {
+            try {
+              pc.addIceCandidate(new RTCIceCandidate(candidate));
+            } catch (error) {
+              console.error(`Error adding queued ICE candidate for ${userSocketId}:`, error);
+            }
+          });
+          // Clear the queue
+          iceCandidateQueueRef.current[userSocketId] = [];
+        }
       };
 
       // Add local tracks to the connection if available
@@ -238,13 +408,16 @@ function App() {
         // Remove all event handlers
         pc.ontrack = null;
         pc.onicecandidate = null;
-        pc.oniceconnectionstatechange = null;
+        pc.onconnectionstatechange = null;
         
         // Close the connection
         pc.close();
         
         // Remove from our ref
         delete peerConnectionsRef.current[userSocketId];
+        
+        // Clear any queued ICE candidates
+        delete iceCandidateQueueRef.current[userSocketId];
         
         // Remove stream from state
         setRemoteStreams(prev => {
@@ -282,23 +455,65 @@ function App() {
     const createAnswer = async (sdp, sender) => {
       try {
         const pc = createPeerConnection(sender);
-        
-        // Only set remote description if we're in a valid state
-        if (pc.signalingState !== "closed") {
-          await pc.setRemoteDescription(sdp);
-          const answerSdp = await pc.createAnswer({
-            offerToReceiveVideo: true,
-            offerToReceiveAudio: true,
-          });
-          await pc.setLocalDescription(answerSdp);
-          
-          socketRef.current.emit("answer", { sdp: answerSdp, target: sender });
-          console.log(`Answer sent to ${sender}`);
-        } else {
-          console.warn(`Peer connection to ${sender} is closed, cannot create answer`);
-        }
+        await pc.setRemoteDescription(sdp);
+        const answerSdp = await pc.createAnswer({
+          offerToReceiveVideo: true,
+          offerToReceiveAudio: true,
+        });
+        await pc.setLocalDescription(answerSdp);
+        socketRef.current.emit("answer", { sdp: answerSdp, target: sender });
+        console.log(`Answer sent to ${sender}`);
       } catch (error) {
         console.error(`Error creating answer for ${sender}:`, error);
+      }
+    };
+
+    const handleOffer = async ({ sdp, sender }) => {
+      console.log(`Received offer from ${sender}`);
+      // make a rquest for media state
+      // alert("requesting media");
+      socketRef.current.emit("media_state_request", { target: sender });
+      
+      await createAnswer(sdp, sender);
+    };
+
+    const handleAnswer = async ({ sdp, sender }) => {
+      console.log(`Received answer from ${sender}`);
+      try {
+        const pc = peerConnectionsRef.current[sender];
+        if (pc && pc.signalingState !== "closed") {
+          await pc.setRemoteDescription(sdp);
+          console.log(`Set remote description for ${sender}`);
+        } else {
+          console.warn(`Cannot set remote description for ${sender}, invalid state:`, 
+                       pc ? pc.signalingState : "no connection");
+        }
+      } catch (error) {
+        console.error(`Error setting remote description for ${sender}:`, error);
+      }
+    };
+
+    const handleCandidate = async ({ candidate, sender }) => {
+      const pc = peerConnectionsRef.current[sender];
+      if (!pc) {
+        console.warn(`No peer connection for ${sender}`);
+        return;
+      }
+
+      if (pc.remoteDescription) {
+        try {
+          await pc.addIceCandidate(new RTCIceCandidate(candidate));
+          console.log(`Added ICE candidate from ${sender}`);
+        } catch (error) {
+          console.error(`Error adding ICE candidate from ${sender}:`, error);
+        }
+      } else {
+        // Queue the candidate if remote description is not set
+        console.log(`Queueing ICE candidate for ${sender} until remote description is set`);
+        if (!iceCandidateQueueRef.current[sender]) {
+          iceCandidateQueueRef.current[sender] = [];
+        }
+        iceCandidateQueueRef.current[sender].push(candidate);
       }
     };
 
@@ -331,40 +546,14 @@ function App() {
           cleanupPeerConnection(userId);
         }
       });
-    };
 
-    const handleOffer = async ({ sdp, sender }) => {
-      console.log(`Received offer from ${sender}`);
-      await createAnswer(sdp, sender);
-    };
-
-    const handleAnswer = async ({ sdp, sender }) => {
-      const pc = peerConnectionsRef.current[sender];
-      if (pc && pc.signalingState !== "closed" && pc.signalingState !== "stable") {
-        try {
-          await pc.setRemoteDescription(sdp);
-          console.log(`Set remote description for ${sender}`);
-        } catch (error) {
-          console.error(`Error setting remote description for ${sender}:`, error);
+      // Request current media states from all existing users
+      roomUsers.forEach(user => {
+        if (user.id !== socketRef.current.id) {
+          // alert("requesting media");
+          socketRef.current.emit("media_state_request", { target: user.id });
         }
-      } else {
-        console.warn(`Cannot set remote description for ${sender}, invalid state:`, 
-                     pc ? pc.signalingState : "no connection");
-      }
-    };
-
-    const handleCandidate = async ({ candidate, sender }) => {
-      const pc = peerConnectionsRef.current[sender];
-      if (pc && pc.remoteDescription && pc.signalingState !== "closed") {
-        try {
-          await pc.addIceCandidate(new RTCIceCandidate(candidate));
-          console.log(`Added ICE candidate from ${sender}`);
-        } catch (error) {
-          console.error(`Error adding ICE candidate from ${sender}:`, error);
-        }
-      } else {
-        console.warn(`Cannot add ICE candidate for ${sender}, invalid state or no remote description`);
-      }
+      });
     };
 
     const handleUserDisconnected = (userId) => {
@@ -376,18 +565,13 @@ function App() {
     };
 
     // Add new socket event listeners for media state changes
-    socketRef.current.on("media_state_change", ({ userId, audio, video }) => {
+    socketRef.current.on("media_state_change", ({ sender, audio, video }) => {
+      alert("Got media from: "+sender);
       setUserMediaState(prev => ({
         ...prev,
-        [userId]: { audio, video }
+        [sender]: { audio, video }
       }));
     });
-
-    // Initialize local media state
-    setUserMediaState(prev => ({
-      ...prev,
-      [socketRef.current.id]: { audio: true, video: true }
-    }));
 
     // Set up socket event listeners
     socketRef.current.on("room_users", handleRoomUsers);
@@ -447,6 +631,28 @@ function App() {
     };
   }, []); // Keep empty dependency array to run only once
 
+  // Add new socket event listener for media state requests
+  useEffect(() => {
+    if (!socketRef.current) return;
+
+    socketRef.current.on("media_state_request", ({ requesterid }) => {
+      // Send current media state to the requester
+      const currentState = userMediaState[socketRef.current.id] || { audio: true, video: true };
+      // alert("sending media state to: "+sender);
+      // alert("my id: "+socketRef.current.id);
+      socketRef.current.emit("media_state_change", {
+        userId: requesterid,
+        senderid: socketRef.current.id,
+        audio: currentState.audio,
+        video: currentState.video
+      });
+    });
+
+    return () => {
+      socketRef.current.off("media_state_request");
+    };
+  }, [userMediaState]);
+
   // Get the number of videos to display (local + remotes)
   const totalVideos = 1 + Object.keys(remoteStreams).length;
   
@@ -503,36 +709,90 @@ function App() {
   // Add this before the return statement
   const localUserColor = userColors[socketRef.current?.id] || getRandomColor();
 
-  const toggleMedia = (type, userId = socketRef.current?.id) => {
-    if (!userId) return;
+  const toggleMedia = (type) => {
+    if (!localStreamRef.current) return;
 
-    setUserMediaState(prev => {
-      const newState = {
-        ...prev,
-        [userId]: {
-          ...prev[userId],
-          [type]: !prev[userId]?.[type]
-        }
-      };
-
-      // If it's local user, actually toggle the tracks
-      if (userId === socketRef.current?.id) {
-        const tracks = localStreamRef.current?.getTracks();
-        tracks?.forEach(track => {
-          if (track.kind === type) {
-            track.enabled = newState[userId][type];
-          }
+    const tracks = localStreamRef.current.getTracks();
+    tracks.forEach(track => {
+      if (track.kind === type) {
+        track.enabled = !track.enabled;
+        const newState = track.enabled;
+        
+        setUserMediaState(prev => {
+          const currentState = prev[socketRef.current.id] || { audio: true, video: true };
+          return {
+            ...prev,
+            [socketRef.current.id]: {
+              ...currentState,
+              [type]: newState
+            }
+          };
         });
 
         // Emit the state change to other users
         socketRef.current?.emit("media_state_change", {
-          audio: newState[userId].audio,
-          video: newState[userId].video
+          userId: "send_to_all",
+          senderid: socketRef.current.id,
+          audio: type === 'audio' ? newState : (userMediaState[socketRef.current.id]?.audio ?? true),
+          video: type === 'video' ? newState : (userMediaState[socketRef.current.id]?.video ?? true)
         });
       }
-
-      return newState;
     });
+  };
+
+  // Update chat message handling
+  useEffect(() => {
+    if (!socketRef.current) return;
+
+    const handleChatMessage = ({ sender, message, senderName }) => {
+      setMessages(prev => [...prev, { sender, message, senderName }]);
+      // Increment unread count if chat is closed
+      if (!isChatOpen) {
+        setUnreadMessages(prev => prev + 1);
+      }
+      // Scroll to bottom when new message arrives
+      if (chatContainerRef.current) {
+        chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+      }
+    };
+
+    socketRef.current.on('chat_message', handleChatMessage);
+
+    return () => {
+      socketRef.current.off('chat_message', handleChatMessage);
+    };
+  }, [isChatOpen]); // Add isChatOpen to dependencies
+
+  // Reset unread count when chat is opened
+  useEffect(() => {
+    if (isChatOpen) {
+      setUnreadMessages(0);
+    }
+  }, [isChatOpen]);
+
+  const sendMessage = () => {
+    if (!newMessage.trim() || !socketRef.current) return;
+
+    const message = {
+      sender: socketRef.current.id,
+      message: newMessage.trim(),
+      senderName: `User-${socketRef.current.id.slice(0, 6)}`,
+    };
+
+    socketRef.current.emit('chat_message', message);
+    setMessages(prev => [...prev, message]);
+    setNewMessage('');
+    
+    // Scroll to bottom after sending
+    if (chatContainerRef.current) {
+      chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+    }
+  };
+
+  const handleKeyPress = (e) => {
+    if (e.key === 'Enter') {
+      sendMessage();
+    }
   };
 
   return (
@@ -544,7 +804,12 @@ function App() {
         </div>
       </div>
       
-      <div style={{...styles.gridContainer, ...getGridStyle()}}>
+      <div style={{
+        ...styles.gridContainer,
+        ...getGridStyle(),
+        marginRight: isChatOpen ? '400px' : '0',
+        transition: 'margin-right 0.3s ease',
+      }}>
         {/* Local video */}
         <div style={{
           ...styles.videoContainer,
@@ -563,26 +828,6 @@ function App() {
             backgroundColor: `${localUserColor}CC`
           }}>
             You (Local)
-          </div>
-          <div style={styles.controlsContainer}>
-            <button
-              onClick={() => toggleMedia('audio')}
-              style={{
-                ...styles.controlButton,
-                ...(!(userMediaState[socketRef.current?.id]?.audio) && styles.controlButtonOff)
-              }}
-            >
-              {userMediaState[socketRef.current?.id]?.audio ? Icons.micOn : Icons.micOff}
-            </button>
-            <button
-              onClick={() => toggleMedia('video')}
-              style={{
-                ...styles.controlButton,
-                ...(!(userMediaState[socketRef.current?.id]?.video) && styles.controlButtonOff)
-              }}
-            >
-              {userMediaState[socketRef.current?.id]?.video ? Icons.videoOn : Icons.videoOff}
-            </button>
           </div>
         </div>
         
@@ -608,7 +853,12 @@ function App() {
                 ref={el => {
                   if (el) {
                     el.srcObject = stream;
-                    // Mute audio if audio is disabled
+                    // Ensure video track is enabled
+                    const videoTrack = stream.getVideoTracks()[0];
+                    if (videoTrack) {
+                      videoTrack.enabled = mediaState?.video ?? true;
+                    }
+                    // Ensure audio track is enabled
                     const audioTrack = stream.getAudioTracks()[0];
                     if (audioTrack) {
                       audioTrack.enabled = mediaState?.audio ?? true;
@@ -634,23 +884,94 @@ function App() {
               }}>
                 {user?.name || userId.substring(0, 6)}
               </div>
-              <div style={styles.controlsContainer}>
-                <div style={{
-                  ...styles.controlButton,
-                  ...(!(mediaState?.audio) && styles.controlButtonOff)
-                }}>
-                  {mediaState?.audio ? Icons.micOn : Icons.micOff}
-                </div>
-                <div style={{
-                  ...styles.controlButton,
-                  ...(!(mediaState?.video) && styles.controlButtonOff)
-                }}>
-                  {mediaState?.video ? Icons.videoOn : Icons.videoOff}
-                </div>
-              </div>
             </div>
           );
         })}
+      </div>
+
+      {/* Controls Bar */}
+      <div style={styles.controlsBar}>
+        <button
+          onClick={() => toggleMedia('audio')}
+          style={{
+            ...styles.controlButton,
+            ...(userMediaState[socketRef.current?.id]?.audio === false && styles.controlButtonOff)
+          }}
+        >
+          {userMediaState[socketRef.current?.id]?.audio ? Icons.micOn : Icons.micOff}
+        </button>
+        <button
+          onClick={() => toggleMedia('video')}
+          style={{
+            ...styles.controlButton,
+            ...(userMediaState[socketRef.current?.id]?.video === false && styles.controlButtonOff)
+          }}
+        >
+          {userMediaState[socketRef.current?.id]?.video ? Icons.videoOn : Icons.videoOff}
+        </button>
+      </div>
+
+      {/* Chat Button with Notification */}
+      <div style={styles.chatButtonContainer}>
+        <button 
+          style={styles.chatButton}
+          onClick={() => setIsChatOpen(!isChatOpen)}
+        >
+          💬
+        </button>
+        {unreadMessages > 0 && (
+          <div style={styles.notificationBadge}>
+            {unreadMessages}
+          </div>
+        )}
+      </div>
+
+      {/* Chat Component */}
+      <div style={styles.chatContainer}>
+        <div style={styles.chatHeader}>
+          <div style={styles.chatTitle}>Chat</div>
+          <button 
+            style={styles.closeButton}
+            onClick={() => setIsChatOpen(false)}
+          >
+            ×
+          </button>
+        </div>
+        <div 
+          style={styles.messagesContainer}
+          ref={chatContainerRef}
+        >
+          {messages.map((msg, index) => (
+            <div 
+              key={index}
+              style={{
+                ...styles.message,
+                ...(msg.sender === socketRef.current?.id ? styles.ownMessage : styles.otherMessage)
+              }}
+            >
+              <div style={styles.messageSender}>
+                {msg.senderName}
+              </div>
+              {msg.message}
+            </div>
+          ))}
+        </div>
+        <div style={styles.messageInputContainer}>
+          <input
+            type="text"
+            value={newMessage}
+            onChange={(e) => setNewMessage(e.target.value)}
+            onKeyPress={handleKeyPress}
+            placeholder="Type a message..."
+            style={styles.messageInput}
+          />
+          <button 
+            style={styles.sendButton}
+            onClick={sendMessage}
+          >
+            Send
+          </button>
+        </div>
       </div>
     </div>
   );
