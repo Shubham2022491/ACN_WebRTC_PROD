@@ -1,6 +1,7 @@
 import React from 'react'
 import { useEffect, useRef, useState } from "react";
 import { io } from "socket.io-client";
+import { getMeetingSummary, sendSpeechText, getUserMessages, getAllMessages, formatTimestamp } from './speechApi';
 
 const ICE_SERVERS = {
   iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
@@ -67,8 +68,14 @@ function App() {
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState('');
   const chatContainerRef = useRef(null);
+  const [chatMode, setChatMode] = useState('people'); // 'people' or 'ai'
+  const [isLoading, setIsLoading] = useState(false);
   const [unreadMessages, setUnreadMessages] = useState(0);
   const iceCandidateQueueRef = useRef({});
+  const [isListening, setIsListening] = useState(false);
+  const recognitionRef = useRef(null);
+  const silenceTimerRef = useRef(null);
+  const finalTranscriptRef = useRef('');
 
   const styles = {
     container: {
@@ -317,12 +324,66 @@ function App() {
     console.log("Initializing socket and WebRTC connections");
     
     // Initialize socket connection
+    // socketRef.current = io("http://localhost:4000");
     socketRef.current = io("wss://acn-webrtc-signaling-server-prod.onrender.com", {
         transports: ['websocket'],
         reconnectionAttempts: 5,
         timeout: 5000,
     });
     
+    // Initialize speech recognition
+    if ('webkitSpeechRecognition' in window) {
+      const recognition = new window.webkitSpeechRecognition();
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.lang = 'en-US';
+
+      recognition.onstart = () => {
+        console.log('Speech recognition started');
+        setIsListening(true);
+      };
+
+      recognition.onend = () => {
+        console.log('Speech recognition ended');
+        setIsListening(false);
+        // If we have a final transcript, send it
+        if (finalTranscriptRef.current.trim()) {
+          handleSpeechEnd();
+        }
+      };
+
+      recognition.onresult = (event) => {
+        let interimTranscript = '';
+        let finalTranscript = '';
+
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          const transcript = event.results[i][0].transcript;
+          if (event.results[i].isFinal) {
+            finalTranscript += transcript;
+          } else {
+            interimTranscript += transcript;
+          }
+        }
+
+        finalTranscriptRef.current = finalTranscript;
+
+        // Reset silence timer on new speech
+        if (interimTranscript || finalTranscript) {
+          clearTimeout(silenceTimerRef.current);
+          silenceTimerRef.current = setTimeout(() => {
+            if (finalTranscriptRef.current.trim()) {
+              handleSpeechEnd();
+            }
+          }, 2000); // 2 seconds of silence
+        }
+      };
+
+      recognitionRef.current = recognition;
+      
+      // Start speech recognition immediately since audio is enabled by default
+      recognition.start();
+    }
+
     const createPeerConnection = (userSocketId) => {
       // Check if connection already exists
       if (peerConnectionsRef.current[userSocketId]) {
@@ -566,7 +627,7 @@ function App() {
 
     // Add new socket event listeners for media state changes
     socketRef.current.on("media_state_change", ({ sender, audio, video }) => {
-     // alert("Got media from: "+sender);
+      alert("Got media from: "+sender);
       setUserMediaState(prev => ({
         ...prev,
         [sender]: { audio, video }
@@ -622,6 +683,12 @@ function App() {
       if (localStreamRef.current) {
         localStreamRef.current.getTracks().forEach(track => track.stop());
       }
+      
+      // Stop speech recognition
+      if (recognitionRef.current) {
+        recognitionRef.current.stop();
+      }
+      clearTimeout(silenceTimerRef.current);
       
       // Disconnect socket
       if (socketRef.current) {
@@ -736,6 +803,22 @@ function App() {
           audio: type === 'audio' ? newState : (userMediaState[socketRef.current.id]?.audio ?? true),
           video: type === 'video' ? newState : (userMediaState[socketRef.current.id]?.video ?? true)
         });
+
+        // Handle speech recognition when audio is toggled
+        if (type === 'audio') {
+          if (newState) {
+            // Start speech recognition when audio is enabled
+            if (recognitionRef.current) {
+              finalTranscriptRef.current = '';
+              recognitionRef.current.start();
+            }
+          } else {
+            // Stop speech recognition when audio is disabled
+            if (recognitionRef.current) {
+              recognitionRef.current.stop();
+            }
+          }
+        }
       }
     });
   };
@@ -770,17 +853,67 @@ function App() {
     }
   }, [isChatOpen]);
 
-  const sendMessage = () => {
-    if (!newMessage.trim() || !socketRef.current) return;
-
-    const message = {
-      sender: socketRef.current.id,
-      message: newMessage.trim(),
-      senderName: `User-${socketRef.current.id.slice(0, 6)}`,
-    };
-
-    socketRef.current.emit('chat_message', message);
-    setMessages(prev => [...prev, message]);
+  const sendMessage = async () => {
+    if (!newMessage.trim()) return;
+    
+    if (chatMode === 'people') {
+      // Original people chat functionality
+      if (!socketRef.current) return;
+      
+      const message = {
+        sender: socketRef.current.id,
+        message: newMessage.trim(),
+        senderName: `User-${socketRef.current.id.slice(0, 6)}`,
+      };
+      socketRef.current.emit('chat_message', message);
+      setMessages(prev => [...prev, message]);
+    } else {
+      // AI chat functionality
+      const userMessage = {
+        sender: 'user',
+        message: newMessage.trim(),
+        senderName: `User-${socketRef.current.id.slice(0, 6)}`,
+      };
+      
+      setMessages(prev => [...prev, userMessage]);
+      
+      // Set loading state (optional)
+      setIsLoading(true);
+      
+      try {
+        // Call the API to get meeting summary
+        const response = await getMeetingSummary(newMessage.trim());
+        
+        // Create AI response message with summary from API
+        const aiResponse = {
+          sender: 'ai',
+          message: response.summary,
+          senderName: 'AI Assistant',
+        };
+        
+        setMessages(prev => [...prev, aiResponse]);
+      } catch (error) {
+        console.error("Error getting AI response:", error);
+        
+        // Show error message in chat
+        const errorMessage = {
+          sender: 'ai',
+          message: "Sorry, I couldn't process your request. Please try again.",
+          senderName: 'AI Assistant',
+        };
+        
+        setMessages(prev => [...prev, errorMessage]);
+      } finally {
+        // Reset loading state
+        setIsLoading(false);
+        
+        // Scroll to bottom after receiving AI response
+        if (chatContainerRef.current) {
+          chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+        }
+      }
+    }
+    
     setNewMessage('');
     
     // Scroll to bottom after sending
@@ -794,6 +927,57 @@ function App() {
       sendMessage();
     }
   };
+
+  const toggleChatMode = () => {
+    setChatMode(prev => prev === 'people' ? 'ai' : 'people');
+    setMessages([]); // Clear messages when switching modes
+  };
+
+  const handleSpeechEnd = async () => {
+    if (finalTranscriptRef.current.trim()) {
+      try {
+        await sendSpeechText(socketRef.current?.id, finalTranscriptRef.current);
+        finalTranscriptRef.current = '';
+      } catch (error) {
+        console.error('Error sending speech text:', error);
+      }
+    }
+  };
+
+  const toggleSpeechRecognition = () => {
+    if (!recognitionRef.current) return;
+
+    if (isListening) {
+      recognitionRef.current.stop();
+    } else {
+      finalTranscriptRef.current = '';
+      recognitionRef.current.start();
+    }
+  };
+
+  // Add speech recognition button to controls
+  const renderControls = () => (
+    <div style={styles.controlsBar}>
+      <button
+        onClick={() => toggleMedia('audio')}
+        style={{
+          ...styles.controlButton,
+          ...(userMediaState[socketRef.current?.id]?.audio === false && styles.controlButtonOff)
+        }}
+      >
+        {userMediaState[socketRef.current?.id]?.audio ? Icons.micOn : Icons.micOff}
+      </button>
+      <button
+        onClick={() => toggleMedia('video')}
+        style={{
+          ...styles.controlButton,
+          ...(userMediaState[socketRef.current?.id]?.video === false && styles.controlButtonOff)
+        }}
+      >
+        {userMediaState[socketRef.current?.id]?.video ? Icons.videoOn : Icons.videoOff}
+      </button>
+    </div>
+  );
 
   return (
     <div style={styles.container}>
@@ -890,26 +1074,7 @@ function App() {
       </div>
 
       {/* Controls Bar */}
-      <div style={styles.controlsBar}>
-        <button
-          onClick={() => toggleMedia('audio')}
-          style={{
-            ...styles.controlButton,
-            ...(userMediaState[socketRef.current?.id]?.audio === false && styles.controlButtonOff)
-          }}
-        >
-          {userMediaState[socketRef.current?.id]?.audio ? Icons.micOn : Icons.micOff}
-        </button>
-        <button
-          onClick={() => toggleMedia('video')}
-          style={{
-            ...styles.controlButton,
-            ...(userMediaState[socketRef.current?.id]?.video === false && styles.controlButtonOff)
-          }}
-        >
-          {userMediaState[socketRef.current?.id]?.video ? Icons.videoOn : Icons.videoOff}
-        </button>
-      </div>
+      {renderControls()}
 
       {/* Chat Button with Notification */}
       <div style={styles.chatButtonContainer}>
@@ -937,6 +1102,46 @@ function App() {
             ×
           </button>
         </div>
+        
+        {/* Toggle buttons for chat mode */}
+        <div style={{
+          display: 'flex',
+          justifyContent: 'center',
+          padding: '8px',
+          borderBottom: '1px solid #3c4043',
+        }}>
+          <button 
+            style={{
+              padding: '8px 16px',
+              border: 'none',
+              borderRadius: '20px',
+              cursor: 'pointer',
+              margin: '0 5px',
+              backgroundColor: chatMode === 'people' ? '#8ab4f8' : '#3c4043',
+              color: chatMode === 'people' ? 'black' : 'white',
+              fontWeight: '500',
+            }}
+            onClick={() => chatMode !== 'people' && toggleChatMode()}
+          >
+            Chat with People
+          </button>
+          <button 
+            style={{
+              padding: '8px 16px',
+              border: 'none',
+              borderRadius: '20px',
+              cursor: 'pointer',
+              margin: '0 5px',
+              backgroundColor: chatMode === 'ai' ? '#8ab4f8' : '#3c4043',
+              color: chatMode === 'ai' ? 'black' : 'white',
+              fontWeight: '500',
+            }}
+            onClick={() => chatMode !== 'ai' && toggleChatMode()}
+          >
+            Chat with AI
+          </button>
+        </div>
+        
         <div 
           style={styles.messagesContainer}
           ref={chatContainerRef}
@@ -946,7 +1151,9 @@ function App() {
               key={index}
               style={{
                 ...styles.message,
-                ...(msg.sender === socketRef.current?.id ? styles.ownMessage : styles.otherMessage)
+                ...(msg.sender === socketRef.current?.id || msg.sender === 'user' 
+                  ? styles.ownMessage 
+                  : styles.otherMessage)
               }}
             >
               <div style={styles.messageSender}>
@@ -956,13 +1163,14 @@ function App() {
             </div>
           ))}
         </div>
+        
         <div style={styles.messageInputContainer}>
           <input
             type="text"
             value={newMessage}
             onChange={(e) => setNewMessage(e.target.value)}
             onKeyPress={handleKeyPress}
-            placeholder="Type a message..."
+            placeholder={`Type a message to ${chatMode === 'ai' ? 'AI' : 'people'}...`}
             style={styles.messageInput}
           />
           <button 
