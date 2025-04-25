@@ -163,7 +163,7 @@ def clear_messages_periodically():
     # print("before clearing : ",messages)
     while True:
         # print("before clearing : ",messages)
-        time.sleep(180)  # Wait for 10 minutes (600 seconds)
+        time.sleep(600)  # Wait for 10 minutes (600 seconds)
         print("Clearing messages dictionary...")
         messages.clear()
         print("messages: ",messages)
