@@ -76,6 +76,10 @@ function App() {
   const recognitionRef = useRef(null);
   const silenceTimerRef = useRef(null);
   const finalTranscriptRef = useRef('');
+  // New state to track which users we've requested to stop sending video to us
+  const [videoMuteRequests, setVideoMuteRequests] = useState({});
+  // New state to track which users have requested us to stop sending video to them
+  const [videoMuteResponders, setVideoMuteResponders] = useState({});
 
   const styles = {
     container: {
@@ -450,12 +454,16 @@ function App() {
         }
       };
 
-      // Add local tracks to the connection if available
       if (localStreamRef.current) {
         localStreamRef.current.getTracks().forEach((track) => {
-          pc.addTrack(track, localStreamRef.current);
+          const clonedTrack = track.clone();
+          // alert("Original track id "+track.id +" cloned track id "+clonedTrack.id);
+          console.log("Original track id "+track.id +" cloned track id "+clonedTrack.id);
+
+          pc.addTrack(clonedTrack, new MediaStream([clonedTrack]));
         });
       }
+      
 
       // Store the peer connection
       peerConnectionsRef.current[userSocketId] = pc;
@@ -627,7 +635,7 @@ function App() {
 
     // Add new socket event listeners for media state changes
     socketRef.current.on("media_state_change", ({ sender, audio, video }) => {
-     // alert("Got media from: "+sender);
+      // alert("Got media from: "+sender);
       setUserMediaState(prev => ({
         ...prev,
         [sender]: { audio, video }
@@ -640,6 +648,57 @@ function App() {
     socketRef.current.on("getAnswer", handleAnswer);
     socketRef.current.on("getCandidate", handleCandidate);
     socketRef.current.on("user_disconnected", handleUserDisconnected);
+
+    // Function to handle receiving a video mute request from another user
+    const handleVideoMuteRequest = (senderId, shouldMute) => {
+      // Update our state to track who we should not send video to
+      // alert("Shutting video for "+senderId);
+      setVideoMuteResponders(prev => ({
+        ...prev,
+        [senderId]: shouldMute
+      }));
+      
+      // // Get the peer connection for this specific user
+      const pc = peerConnectionsRef.current[senderId];
+      if (!pc) return;
+      
+      // Find the video sender for this peer connection
+      // alert("Shutting video for "+senderId);
+
+      const videoSender = pc.getSenders().find(sender => 
+        sender.track && sender.track.kind === 'video'
+      );
+      // alert(videoSender);
+      if (videoSender && videoSender.track) {
+        // If shouldMute is true, we'll disable sending video to this user
+        // If shouldMute is false, we'll enable sending video to this user
+        // alert("shutting videotrack id: "+videoSender.track.id);
+        console.log("shutting videotrack id: "+videoSender.track.id);
+        videoSender.track.enabled = !shouldMute;
+        
+        // Notify the sender that we've processed their request
+        socketRef.current.emit("video_mute_response", {
+          target: senderId,
+          muted: shouldMute
+        });
+      }
+    };
+
+    // Inside your useEffect, add these new socket event listeners
+    socketRef.current.on("video_mute_request", ({ sender, shouldMute }) => {
+      console.log(`Received video ${shouldMute ? 'mute' : 'unmute'} request from ${sender}`);
+      handleVideoMuteRequest(sender, shouldMute);
+    });
+
+    socketRef.current.on("video_mute_response", ({ sender, muted }) => {
+      console.log(`User ${sender} has ${muted ? 'muted' : 'unmuted'} their video for us`);
+      setVideoMuteRequests(prev => ({
+        ...prev,
+        [sender]: muted
+      }));
+    });
+
+    
 
     // Get local media stream
     navigator.mediaDevices
@@ -674,6 +733,9 @@ function App() {
         socketRef.current.off("getAnswer", handleAnswer);
         socketRef.current.off("getCandidate", handleCandidate);
         socketRef.current.off("user_disconnected", handleUserDisconnected);
+        // Add this to your cleanup function in the useEffect return
+        socketRef.current.off("video_mute_request");
+        socketRef.current.off("video_mute_response");
       }
       
       // Close all peer connections
@@ -697,6 +759,21 @@ function App() {
       socketRef.current?.off("media_state_change");
     };
   }, []); // Keep empty dependency array to run only once
+
+  // Function to request another user to stop/start sending video to us
+  const requestVideoMute = (userId, shouldMute) => {
+    console.log(`Requesting ${userId} to ${shouldMute ? 'stop' : 'start'} sending video to us`);
+    socketRef.current.emit("video_mute_request", {
+      target: userId,
+      shouldMute: shouldMute
+    });
+    
+    // Update our local state (optimistic update)
+    setVideoMuteRequests(prev => ({
+      ...prev,
+      [userId]: shouldMute
+    }));
+  };
 
   // Add new socket event listener for media state requests
   useEffect(() => {
@@ -1020,6 +1097,7 @@ function App() {
           const user = users.find(u => u.id === userId);
           const borderColor = userColors[userId] || getRandomColor();
           const mediaState = userMediaState[userId];
+          const isMuted = videoMuteRequests[userId] || false;
 
           return (
             <div key={userId} style={{
@@ -1032,7 +1110,8 @@ function App() {
                 playsInline 
                 style={{
                   ...styles.video,
-                  display: mediaState?.video ? 'block' : 'none'
+                  display: mediaState?.video ? 'block' : 'none',
+                  filter: isMuted ? 'grayscale(100%)' : 'none'
                 }}
                 ref={el => {
                   if (el) {
@@ -1062,12 +1141,57 @@ function App() {
                   {user?.name?.[0]?.toUpperCase() || '?'}
                 </div>
               )}
+              {isMuted && (
+                <div style={{
+                  position: 'absolute',
+                  top: '50%',
+                  left: 0,
+                  right: 0,
+                  textAlign: 'center',
+                  backgroundColor: 'rgba(0, 0, 0, 0.7)',
+                  color: 'white',
+                  padding: '5px',
+                  transform: 'translateY(-50%)',
+                  zIndex: 2
+                }}>
+                  Video muted at your request
+                </div>
+              )}
               <div style={{
                 ...styles.nameTag,
                 backgroundColor: `${borderColor}CC`
               }}>
                 {user?.name || userId.substring(0, 6)}
               </div>
+              
+              {/* Video mute button */}
+              <button 
+                onClick={() => requestVideoMute(userId, !isMuted)}
+                style={{
+                  position: 'absolute',
+                  bottom: '40px',  // Position above the name tag
+                  right: '10px',
+                  backgroundColor: isMuted ? '#f44336' : '#4CAF50',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '50%',
+                  width: '30px',
+                  height: '30px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  zIndex: 3,
+                  opacity: 0.7,
+                  transition: 'opacity 0.3s ease',
+                  fontSize: '14px'
+                }}
+                onMouseOver={(e) => e.currentTarget.style.opacity = 1}
+                onMouseOut={(e) => e.currentTarget.style.opacity = 0.7}
+                title={isMuted ? "Request Video On" : "Request Video Off"}
+              >
+                {isMuted ? "🔄" : "📵"}
+              </button>
             </div>
           );
         })}
