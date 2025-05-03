@@ -455,17 +455,14 @@ function App() {
       };
 
       if (localStreamRef.current) {
+        const sharedStream = new MediaStream();
         localStreamRef.current.getTracks().forEach((track) => {
-          if (track.kind === 'video') {
-            const clonedTrack = track.clone();
-            // alert("Original track id "+track.id +" cloned track id "+clonedTrack.id);
-            console.log("Original track id "+track.id +" cloned track id "+clonedTrack.id);
+          
+          const clonedTrack = track.clone();
+          sharedStream.addTrack(clonedTrack);  // Optional but useful if you want to render locally
 
-            pc.addTrack(clonedTrack, new MediaStream([clonedTrack]));
-          }
-          else{
-            pc.addTrack(track, localStreamRef.current);
-          }
+          pc.addTrack(clonedTrack, sharedStream);  // Use the same stream for all
+          
         });
       }
       
