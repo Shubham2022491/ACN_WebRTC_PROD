@@ -456,11 +456,16 @@ function App() {
 
       if (localStreamRef.current) {
         localStreamRef.current.getTracks().forEach((track) => {
-          const clonedTrack = track.clone();
-          // alert("Original track id "+track.id +" cloned track id "+clonedTrack.id);
-          console.log("Original track id "+track.id +" cloned track id "+clonedTrack.id);
+          if (track.kind === 'video') {
+            const clonedTrack = track.clone();
+            // alert("Original track id "+track.id +" cloned track id "+clonedTrack.id);
+            console.log("Original track id "+track.id +" cloned track id "+clonedTrack.id);
 
-          pc.addTrack(clonedTrack, new MediaStream([clonedTrack]));
+            pc.addTrack(clonedTrack, new MediaStream([clonedTrack]));
+          }
+          else{
+            pc.addTrack(track, localStreamRef.current);
+          }
         });
       }
       
